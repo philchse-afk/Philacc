@@ -358,5 +358,13 @@
     "bpm": "139",
     "recommendedCapo": "",
     "file": "a hard day-s night.json"
+  },
+  {
+    "title": "La tendresse",
+    "artist": "Bourvil cover Waxx, @Solann_zla",
+    "capo": "0",
+    "bpm": "133",
+    "recommendedCapo": "4",
+    "file": "la tendresse.json"
   }
 ]
