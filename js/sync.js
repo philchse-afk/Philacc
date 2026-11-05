@@ -142,7 +142,7 @@
 
                 // Ajustement à la page (1 ou 2 colonnes) : chaque écran le recalcule avec ses propres dimensions
                 // (voir viewerFit) ; la classe du maître n'est donc pas envoyée.
-                if (a.id === 'song-content-display') b.classList.remove('lyrics-fit-2col');
+                if (a.id === 'song-content-display') { b.classList.remove('lyrics-fit-on'); b.classList.remove('lyrics-fit-2col'); }
 
                 if (fsEl && a === fsEl) {          // plein écran natif : reproduit côté écrans déportés
                     const cls = FS_CLASS[a.id];
@@ -465,7 +465,7 @@
             badge.set('● Synchronisé · lecture ' + dbg.read + ' + MAJ ' + dbg.upd + ' ms · ' + dbg.kb + ' Ko · pire MAJ ' +
                 Math.max(dbg.maxApply, dbg.lastMaxApply) + ' ms · pire image ' + dbg.worstFrame + ' ms (' + dbg.slowFrames +
                 ' > 100 ms)' + (lite ? ' · mode léger' : '') +
-                (fitSig ? ' · texte ' + (fitMode === 2 ? '2 colonnes' : fitMode === 0 ? 'défilement' : '1 colonne') : ''), 'corner');
+                (fitSig && typeof LyricsFit !== 'undefined' ? ' · texte : ' + LyricsFit.label(fitLay) : ''), 'corner');
         }
         // Mesure l'écart entre images affichées : une saccade perçue = un grand écart, quelle qu'en soit la cause.
         // Tourne seulement tant que des mises à jour arrivent (sauf en mode diagnostic) : pas de coût au repos.
@@ -504,7 +504,7 @@
         function applyScroll() {
             if (!scrollState) return;
             const { els, win } = scrollState;
-            const lyr = fitMode === 0 ? document.getElementById('song-content-display') : null;
+            const lyr = fitLay && fitLay.scroll ? document.getElementById('song-content-display') : null;
             const following = !!(lyr && lyr.classList.contains('lyrics-css-fullscreen') && followLyrics(lyr));
             if (els && els.length) {
                 const list = elList || (elList = document.body.querySelectorAll('*'));
@@ -540,24 +540,20 @@
         const fitStyle = document.createElement('style');
         fitStyle.id = 'sync-fit';
         const LYRICS_FS = '#song-content-display.lyrics-css-fullscreen';
-        let fitMode = 1, fitSig = '';             // 1 : 1 colonne, 2 : 2 colonnes, 0 : ne tient pas (défilement)
-        function setFit2(on) {
-            const css = on ? LyricsFit.css(LYRICS_FS) : '';
-            if (fitStyle.textContent !== css) fitStyle.textContent = css;
-            if (!fitStyle.parentNode) document.head.appendChild(fitStyle);
-        }
+        let fitLay = null, fitSig = '';           // fitLay : { cols, scale, scroll } — scroll = ne tient pas (défilement)
         function viewerFit(force) {
             if (typeof LyricsFit === 'undefined') return;
             const el = document.getElementById('song-content-display');
             if (!el || !el.classList.contains('lyrics-css-fullscreen')) {      // pas de plein écran paroles : affichage normal
-                if (fitSig !== '') { setFit2(false); fitSig = ''; fitMode = 1; }
+                if (fitSig !== '') { fitStyle.textContent = ''; fitSig = ''; fitLay = null; }
                 return;
             }
             const sig = LyricsFit.signature(el);
             if (!force && sig === fitSig) return;                              // rien n'a changé : pas de nouvelle mesure
             fitSig = sig;
-            const r = LyricsFit.fit(el, setFit2);
-            if (r !== -1) fitMode = r;
+            if (!fitStyle.parentNode) document.head.appendChild(fitStyle);
+            const lay = LyricsFit.fit(el, LyricsFit.makeApplier(el, fitStyle, LYRICS_FS, null));
+            if (lay) fitLay = lay;
             elList = null;                                                     // la disposition a changé
         }
         // Écran trop petit pour tout afficher : le maître (plus grand) ne défile peut-être pas, donc rien à recopier.

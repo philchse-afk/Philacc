@@ -366,5 +366,13 @@
     "bpm": "133",
     "recommendedCapo": "4",
     "file": "la tendresse.json"
+  },
+  {
+    "title": "La ballade des gens heureux",
+    "artist": "Gérard Lenorman",
+    "capo": "0",
+    "bpm": "",
+    "recommendedCapo": "",
+    "file": "la ballade des gens heureux.json"
   }
 ]

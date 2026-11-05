@@ -1,10 +1,13 @@
-// app.js — v51
-// FEAT : plein écran paroles — ajustement automatique à la page (voir _fitLyricsFullscreen et
-//        js/lyrics-fit.js) : le texte est présenté sur 1 colonne s'il tient sans défilement, sinon sur
-//        2 colonnes (maximum) s'il tient ainsi, sinon sur 1 colonne avec défilement comme avant.
-//        Taille du texte inchangée ; une ligne n'est jamais coupée entre deux colonnes. Recalculé à
-//        l'entrée en plein écran, au changement de contenu et au redimensionnement/rotation. Les écrans
-//        déportés refont le même calcul avec leurs propres dimensions (sync.js).
+// app.js — v52
+// FEAT : plein écran paroles — ajustement automatique à la page (voir _fitLyricsFullscreen et js/lyrics-fit.js) :
+//        on cherche la plus grande taille de texte (100 % → 60 %) qui tient SANS défilement en 1 colonne, puis en
+//        2 colonnes (maximum) ; 1 colonne est préférée sauf si 2 colonnes permettent un texte nettement plus grand.
+//        Si rien ne tient : 1 colonne à taille normale avec défilement, comme avant. Une ligne n'est jamais coupée
+//        entre deux colonnes. Recalculé à l'entrée en plein écran, au changement de contenu et au redimensionnement/
+//        rotation. Les écrans déportés refont le même calcul avec leurs propres dimensions (sync.js).
+// FEAT : texte affiché — cadre léger autour de chaque section (couplet vvvv, refrain rrrr, solo ssss, pont pppp),
+//        mêmes couleurs que les mesures du panneau d'accords (voir formatSongContent, option { sections: true }
+//        réservée à l'affichage : l'aperçu de l'éditeur garde une ligne = un élément, dont dépend le karaoké).
 // FEAT : bouton "[|] Syllabe" dans l'éditeur, à côté de "🎤 Marquer" — insère
 //        le séparateur de syllabe [|] à la position exacte du curseur (dans
 //        un mot, contrairement aux boutons vvvv[]/pppp[] qui forcent un
@@ -1178,7 +1181,7 @@ const App = {
         }
         // ===== FIN BOUTON PLEIN ÉCRAN =====
 
-        document.getElementById("song-content-display").innerHTML = this.formatSongContent(this.currentSong.content);
+        document.getElementById("song-content-display").innerHTML = this.formatSongContent(this.currentSong.content, { sections: true });
         this._renderRythmDisplay();
         if (typeof ChordDB !== 'undefined') ChordDB.bindAll(document.getElementById("song-content-display"));
         this._fitLyricsFullscreen(true);   // si le plein écran paroles est actif : réajuste à la page
@@ -1637,10 +1640,14 @@ const App = {
     },
     // ===== FIN POST-IT IMAGES =====
 
-    formatSongContent(content) {
-        return content.split('\n')
+    // opts.sections : regroupe chaque section (en-tête rrrr/ssss/vvvv/pppp + lignes qui suivent) dans un bloc
+    // <div class="lyrics-section sec-X"> encadré. Les lignes vides qui précèdent un en-tête (ou la fin) sont
+    // supprimées : le cadre porte lui-même l'espacement. Sans option : une ligne source = un élément (aperçu).
+    formatSongContent(content, opts) {
+        const sections = !!(opts && opts.sections);
+        const items = content.split('\n')
             .map(line => {
-                if (line.trim() === '') return '<br>';
+                if (line.trim() === '') return { html: '<br>', blank: true };
                 // Balises <link ...> : jamais affichées telles quelles en mode défilement.
                 // - rel="imageN" → laisse un marqueur invisible (position du post-it, voir
                 //   _renderPostits()), sans altérer le texte ni le marquage environnant.
@@ -1650,16 +1657,16 @@ const App = {
                     const hrefM = line.match(/\bhref=["']([^"']+)["']/i);
                     const relM  = line.match(/\brel=["']([^"']+)["']/i);
                     if (hrefM && relM && /^image\d*$/i.test(relM[1])) {
-                        return `<span class="postit-anchor" data-postit-id="${relM[1]}" data-postit-src="${hrefM[1]}"></span>`;
+                        return { html: `<span class="postit-anchor" data-postit-id="${relM[1]}" data-postit-src="${hrefM[1]}"></span>` };
                     }
-                    return '';
+                    return { html: '' };
                 }
-                if (line.trim().startsWith('>>>>')) return `<div style="color: #black; background-color: #f0f0f0; font-style: normal; font-size: 14px;">${line.trim().substring(4)}</div>`;
-                if (line.trim().startsWith('<<<<')) return `<div style="color: #420252; background-color: #efdbf2; font-style: normal; font-size: 22px;">${line.trim().substring(4)}</div>`;
-                if (line.trim().startsWith('rrrr')) return `<div style="color: #069732; font-style: underline; font-size: 22px;">${line.trim().substring(4)}</div>`;
-                if (line.trim().startsWith('ssss')) return `<div style="color: #060cc3; font-style: underline; font-size: 22px;">${line.trim().substring(4)}</div>`;
-                if (line.trim().startsWith('vvvv')) return `<div style="color: #903c07; font-style: underline; font-size: 22px;">${line.trim().substring(4)}</div>`;
-                if (line.trim().startsWith('pppp')) return `<div style="color: #0a6c68; font-style: underline; font-size: 22px;">${line.trim().substring(4)}</div>`;
+                if (line.trim().startsWith('>>>>')) return { html: `<div style="color: #black; background-color: #f0f0f0; font-style: normal; font-size: calc(14px * var(--lf, 1));">${line.trim().substring(4)}</div>` };
+                if (line.trim().startsWith('<<<<')) return { html: `<div style="color: #420252; background-color: #efdbf2; font-style: normal; font-size: calc(22px * var(--lf, 1));">${line.trim().substring(4)}</div>` };
+                if (line.trim().startsWith('rrrr')) return { html: `<div style="color: #069732; font-style: underline; font-size: calc(22px * var(--lf, 1));">${line.trim().substring(4)}</div>`, sec: 'r' };
+                if (line.trim().startsWith('ssss')) return { html: `<div style="color: #060cc3; font-style: underline; font-size: calc(22px * var(--lf, 1));">${line.trim().substring(4)}</div>`, sec: 's' };
+                if (line.trim().startsWith('vvvv')) return { html: `<div style="color: #903c07; font-style: underline; font-size: calc(22px * var(--lf, 1));">${line.trim().substring(4)}</div>`, sec: 'v' };
+                if (line.trim().startsWith('pppp')) return { html: `<div style="color: #0a6c68; font-style: underline; font-size: calc(22px * var(--lf, 1));">${line.trim().substring(4)}</div>`, sec: 'p' };
 
                 // Retirer la balise pivot [!] et les séparateurs de syllabe [|] (jamais
                 // affichés) ; les durées [n/d], elles, sont conservées pour
@@ -1668,11 +1675,11 @@ const App = {
                 // calcul de position d'accord, pour que ces balises ne décalent jamais rien.
                 const lineNoPivot = line.replace(/\s*\[!\]/g, '').replace(/\[\|\]/g, '');
                 if (this.showChords) {
-                            return this.renderLyricsWithBadges(lineNoPivot);
+                            return { html: this.renderLyricsWithBadges(lineNoPivot) };
                         } else {
                             const cleanLine = lineNoPivot.replace(/\s*\[\d+\/\d+\]/g, '');
                             const { lyrics } = this.extractChordsAndLyrics(cleanLine);
-                            return `<div class="lyrics-line">${lyrics}</div>`;
+                            return { html: `<div class="lyrics-line">${lyrics}</div>` };
                         }
 
 
@@ -1681,8 +1688,24 @@ const App = {
                 // return `<div style="margin-bottom: 10px; color: #f50606;" >${chords}<br></div><div>${lyrics}</div>`;
                 // const { chords, lyrics } = this.extractChordsAndLyrics(line);
                 // return `<div style="margin-bottom: 10px;">${lyrics}</div>`;
-            })
-            .join('');
+            });
+
+        if (!sections) return items.map(it => it.html).join('');
+
+        let out = '', open = false, pending = '';
+        for (const it of items) {
+            if (it.sec) {                                   // en-tête : ferme la section précédente, en ouvre une nouvelle
+                if (open) out += '</div>';
+                out += '<div class="lyrics-section sec-' + it.sec + '">' + it.html;
+                open = true; pending = '';                  // lignes vides avant l'en-tête : remplacées par la marge du cadre
+            } else if (it.blank) {
+                pending += it.html;                         // gardée seulement si du texte suit dans la même section
+            } else if (it.html !== '') {
+                out += pending + it.html; pending = '';
+            }
+        }
+        if (open) out += '</div>'; else out += pending;     // sans aucune section : rendu inchangé
+        return out;
     },
 
     // Extraire les accords et les paroles d'une ligne (ancienne version, pour affichage au dessus des paroles
@@ -7301,8 +7324,8 @@ const App = {
 
     _exitLyricsCSSFullscreen() {
         const el = document.getElementById('song-content-display');
-        if (el) { el.classList.remove('lyrics-css-fullscreen'); el.classList.remove('lyrics-fit-2col'); }
-        this._lyricsFitSig = '';
+        if (el) { el.classList.remove('lyrics-css-fullscreen'); if (typeof LyricsFit !== 'undefined') LyricsFit.resetMaster(el); }
+        this._lyricsFitSig = ''; this._lyricsFitKey = '';
         this._bodyScrollUnlock();
         const closeBtn = document.getElementById('lyrics-fs-close');
         if (closeBtn) closeBtn.remove();
@@ -7383,12 +7406,12 @@ const App = {
         document.body.appendChild(close);
     },
     // ===== AJUSTEMENT À LA PAGE (plein écran paroles) =====
-    // En plein écran (natif ou repli CSS), le texte est réparti sur 1 colonne s'il tient sans défilement,
-    // sinon sur 2 colonnes (maximum) s'il tient ainsi, sinon on garde 1 colonne avec défilement (comportement
-    // d'origine). La taille du texte n'est jamais modifiée. La décision est prise par LyricsFit
-    // (js/lyrics-fit.js), le même module que celui utilisé par sync.js pour refaire ce calcul sur chaque
-    // écran déporté : leurs dimensions diffèrent de celles de ce poste.
-    // La disposition est portée par la classe lyrics-fit-2col (règles injectées par lyrics-fit.js).
+    // En plein écran (natif ou repli CSS), on cherche la disposition la plus confortable qui tienne SANS défilement :
+    // la plus grande taille de texte (100 % → 60 %) en 1 colonne, puis en 2 colonnes (maximum) ; 1 colonne est préférée
+    // sauf si 2 colonnes permettent un texte nettement plus grand. Si rien ne tient, on garde 1 colonne à taille normale
+    // avec défilement (comportement d'origine). La décision est prise par LyricsFit (js/lyrics-fit.js), le même module
+    // que celui utilisé par sync.js pour refaire ce calcul sur chaque écran déporté : leurs dimensions diffèrent de
+    // celles de ce poste. La disposition est portée par la classe lyrics-fit-on et la feuille #lyrics-fit-css.
     _isLyricsFullscreenActive() {
         const el = document.getElementById('song-content-display');
         return !!el && (el.classList.contains('lyrics-css-fullscreen')
@@ -7399,18 +7422,18 @@ const App = {
     _fitLyricsFullscreen(force) {
         const el = document.getElementById('song-content-display');
         if (!el || typeof LyricsFit === 'undefined') return;
-        const cls = LyricsFit.CLASS_2COL;
-        if (!this._isLyricsFullscreenActive()) {          // hors plein écran : affichage normal, sans colonnes
-            if (el.classList.contains(cls)) el.classList.remove(cls);
-            this._lyricsFitSig = '';
+        if (!this._isLyricsFullscreenActive()) {          // hors plein écran : affichage normal (taille et colonnes d'origine)
+            if (el.classList.contains(LyricsFit.CLASS_ON)) LyricsFit.resetMaster(el);
+            this._lyricsFitSig = ''; this._lyricsFitKey = ''; this._lyricsFitLayout = null;
             return;
         }
         const sig = LyricsFit.signature(el);
         if (!force && sig === this._lyricsFitSig) return;
         this._lyricsFitSig = sig;
-        const was = el.classList.contains(cls);
-        LyricsFit.fit(el, on => el.classList.toggle(cls, on));
-        if (el.classList.contains(cls) !== was) this._renderPostits();   // les ancres des post-its ont changé de place
+        const lay = LyricsFit.fit(el, LyricsFit.masterApplier(el));
+        this._lyricsFitLayout = lay;                       // (consultable pour le diagnostic)
+        const key = lay ? lay.cols + '/' + lay.scale + '/' + lay.scroll : '';
+        if (key !== this._lyricsFitKey) { this._lyricsFitKey = key; this._renderPostits(); }   // les ancres des post-its ont bougé
     },
     // ===== FIN AJUSTEMENT À LA PAGE =====
 
