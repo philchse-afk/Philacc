@@ -1,10 +1,14 @@
-// app.js — v52
+// app.js — v53
 // FEAT : plein écran paroles — ajustement automatique à la page (voir _fitLyricsFullscreen et js/lyrics-fit.js) :
 //        on cherche la plus grande taille de texte (100 % → 60 %) qui tient SANS défilement en 1 colonne, puis en
 //        2 colonnes (maximum) ; 1 colonne est préférée sauf si 2 colonnes permettent un texte nettement plus grand.
 //        Si rien ne tient : 1 colonne à taille normale avec défilement, comme avant. Une ligne n'est jamais coupée
 //        entre deux colonnes. Recalculé à l'entrée en plein écran, au changement de contenu et au redimensionnement/
 //        rotation. Les écrans déportés refont le même calcul avec leurs propres dimensions (sync.js).
+// FEAT : plein écran paroles — jusqu'à 4 colonnes (LyricsFit.MAX_COLS) quand c'est la seule façon de tout faire tenir :
+//        la hauteur dépend du nombre de lignes, pas de leur longueur (une chanson de 60 lignes courtes sur un écran large).
+// FEAT : plein écran frame Accords — le calcul d'échelle (_fitChordsFullscreen) est désormais partagé (LyricsFit.fitChords)
+//        pour que chaque écran déporté le refasse avec SES dimensions (il recopiait les pixels du maître : cartes coupées).
 // FEAT : texte affiché — cadre léger autour de chaque section (couplet vvvv, refrain rrrr, solo ssss, pont pppp),
 //        mêmes couleurs que les mesures du panneau d'accords (voir formatSongContent, option { sections: true }
 //        réservée à l'affichage : l'aperçu de l'éditeur garde une ligne = un élément, dont dépend le karaoké).
@@ -7603,6 +7607,20 @@ const App = {
         const panel = document.getElementById('song-chords-panel');
         const display = document.getElementById('display-chords');
         if (!panel || !display || !this._chordsFsActive || !display.classList.contains('cfs-flow')) return;
+
+        // Calcul partagé avec les écrans déportés (js/lyrics-fit.js : fitChords) ; l'ancien calcul ci-dessous sert de repli
+        // si ce module n'est pas chargé (ancienne version en cache).
+        if (typeof LyricsFit !== 'undefined' && LyricsFit.fitChords) {
+            LyricsFit.fitChords(panel, display, s => {
+                if (s.height !== undefined) display.style.height = s.height + 'px';
+                if (s.overflowX) display.style.overflowX = s.overflowX;
+                if (s.scale !== undefined) {
+                    display.style.setProperty('--cfs-scale', s.scale.toFixed(3));
+                    display.style.setProperty('--cfs-cardw', s.cardW.toFixed(1) + 'px');
+                }
+            });
+            return;
+        }
 
         const header = panel.querySelector('.chords-panel-header');
         const cs = getComputedStyle(panel);

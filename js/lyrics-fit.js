@@ -4,8 +4,8 @@
 //
 // En plein écran, le texte (#song-content-display) est présenté de la façon la plus
 // confortable qui TIENNE SANS DÉFILEMENT : on cherche la plus grande taille de texte
-// (de 100 % jusqu'à MIN_SCALE) qui tient en 1 colonne, puis en 2 colonnes (maximum) ;
-// on garde 1 colonne sauf si 2 colonnes permettent un texte nettement plus grand.
+// (de 100 % jusqu'à MIN_SCALE) qui tient en 1 colonne, puis en 2, 3 ou 4 colonnes (MAX_COLS) ;
+// on garde le moins de colonnes possible, sauf si une colonne de plus permet un texte nettement plus grand.
 // Si rien ne tient, même à la taille minimale : 1 colonne à taille normale avec défilement
 // vertical, comme avant.
 //
@@ -21,6 +21,8 @@
 //   LyricsFit.fit(el, apply)      mesure et applique ; renvoie { cols, scale, scroll } (null si rien à mesurer)
 //   LyricsFit.css(sel, layout)    règles CSS de la disposition pour le sélecteur sel
 //   LyricsFit.makeApplier(...)    fabrique la fonction apply (feuille de style + classe facultative)
+//   LyricsFit.fitChords(...)      même principe pour le plein écran de la frame Accords (cartes par section)
+//   LyricsFit.makeChordsApplier() fabrique la fonction apply de fitChords (feuille de style)
 //   LyricsFit.signature(el)       empreinte (contenu + dimensions) : inutile de recalculer si inchangée
 //   LyricsFit.label(layout)       libellé lisible (diagnostic)
 // -----------------------------------------------------------------------------
@@ -32,9 +34,12 @@
     const STEP = 0.05;
     const SCALES = [];
     for (let s = 1; s >= MIN_SCALE - 1e-9; s -= STEP) SCALES.push(Math.round(s * 100) / 100);
-    // 2 colonnes ne sont retenues que si elles permettent un texte au moins 12 points plus grand que 1 colonne :
-    // à taille égale ou presque, 1 colonne est plus simple à lire (lignes entières, accords alignés).
-    const TWO_COL_ADVANTAGE = 0.12;
+    // Nombre maximal de colonnes. Une chanson longue aux lignes courtes ne tient souvent qu'avec 3 ou 4 colonnes sur un
+    // écran large (la hauteur dépend du NOMBRE de lignes, pas de leur longueur). Mettre 2 pour revenir à « 2 colonnes max ».
+    const MAX_COLS = 4;
+    // Une colonne de plus n'est retenue que si elle permet un texte au moins 12 points plus grand : à taille égale ou
+    // presque, moins de colonnes est plus simple à lire (lignes entières, accords alignés).
+    const COL_ADVANTAGE = 0.12;
 
     // column-fill: balance : les deux colonnes sont équilibrées. Les lignes (accords + paroles) ne sont jamais coupées
     // entre deux colonnes ; un cadre de section, lui, peut se poursuivre dans la colonne suivante (chaque morceau garde
@@ -50,11 +55,14 @@
     const FIT_PADDING = 'padding:52px 3vw 14px !important;';
 
     function css(sel, lay) {
-        let out = sel + '{--lf:' + lay.scale + ' !important;' + FIT_PADDING + (lay.cols === 2 ? COLS : '') + '}';
-        if (lay.cols === 2) {
+        const cols = lay.cols >= 2 ? COLS.replace(/column-count:2/g, 'column-count:' + lay.cols).replace(/-webkit-column-count:2/g, '-webkit-column-count:' + lay.cols) : '';
+        let out = sel + '{--lf:' + lay.scale + ' !important;' + FIT_PADDING + cols + '}';
+        if (lay.cols >= 2) {
             out += sel + '>*{' + KEEP + '}' +
                 sel + '>.lyrics-section{' + SPLIT_OK + '}' +
-                sel + '>.lyrics-section>*{' + KEEP + '}';
+                sel + '>.lyrics-section>*{' + KEEP + '}' +
+                // le titre d'une section reste avec la ligne qui le suit (jamais seul en bas d'une colonne)
+                sel + '>.lyrics-section>:first-child{break-after:avoid !important;-webkit-column-break-after:avoid !important;}';
         }
         return out;
     }
@@ -99,12 +107,15 @@
         if (tryLayout(1, 1)) {
             lay = { cols: 1, scale: 1, scroll: false };                   // tient tel quel : cas courant des chansons courtes
         } else {
-            const i1 = best(1), i2 = best(2);
-            const s1 = i1 >= 0 ? SCALES[i1] : 0, s2 = i2 >= 0 ? SCALES[i2] : 0;
-            if (i1 < 0 && i2 < 0) lay = { cols: 1, scale: 1, scroll: true };          // ne tient pas : défilement, comme avant
-            else if (i2 >= 0 && s2 >= s1 + TWO_COL_ADVANTAGE - 1e-9) lay = { cols: 2, scale: s2, scroll: false };
-            else if (i1 >= 0) lay = { cols: 1, scale: s1, scroll: false };
-            else lay = { cols: 2, scale: s2, scroll: false };
+            let chosen = null;                                            // { cols, scale } : disposition retenue jusqu'ici
+            for (let c = 1; c <= MAX_COLS; c++) {
+                if (chosen && chosen.scale >= 0.95) break;                // déjà quasi à taille normale : plus de colonnes n'apporterait rien
+                const i = best(c);
+                if (i < 0) continue;                                      // ne tient pas avec c colonnes, même à la taille minimale
+                const sc = SCALES[i];
+                if (!chosen || sc >= chosen.scale + COL_ADVANTAGE - 1e-9) chosen = { cols: c, scale: sc };
+            }
+            lay = chosen ? { cols: chosen.cols, scale: chosen.scale, scroll: false } : { cols: 1, scale: 1, scroll: true };  // sinon défilement, comme avant
         }
         apply(lay);
         return lay;
@@ -117,7 +128,55 @@
         return lay.cols + ' colonne' + (lay.cols > 1 ? 's' : '') + (lay.scale < 1 ? ', texte à ' + Math.round(lay.scale * 100) + ' %' : '');
     }
 
-    window.LyricsFit = { css, signature, fit, makeApplier, label, SCALES, MIN_SCALE, TWO_COL_ADVANTAGE, CLASS_ON: 'lyrics-fit-on' };
+    // ---------------------------------------------------------------------------------------------
+    // Plein écran de la frame ACCORDS (cartes par section, voir app.js : toggleChordsFullscreen).
+    // Même calcul que celui du maître, mais utilisable par chaque écran : le maître le faisait avec SES dimensions
+    // et les écrans déportés en recopiaient les valeurs en pixels (cartes coupées sur un écran plus petit).
+    // Dichotomie sur l'échelle (taille des accords) ; chaque essai recalcule le nombre de colonnes de cartes et leur largeur.
+    // set(état) applique : { height, overflowX } au départ, { scale, cardW } à chaque essai, { overflowX: 'auto' } en dernier recours.
+    function fitChords(panel, display, set) {
+        const header = panel.querySelector('.chords-panel-header');
+        const cs = getComputedStyle(panel);
+        const availH = panel.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+            - (header ? header.offsetHeight + parseFloat(getComputedStyle(header).marginBottom || 0) : 0);
+        set({ height: Math.max(120, availH), overflowX: 'hidden' });
+
+        const W = display.clientWidth;
+        const BASE_CARD_W = 290;                                          // largeur d'une carte à l'échelle 1 (px)
+        const probe = scale => {
+            const gap = 12 * scale;
+            const cols = Math.max(1, Math.floor((W + gap) / (BASE_CARD_W * scale + gap)));
+            set({ scale, cardW: (W - (cols - 1) * gap) / cols });
+            return display.scrollWidth <= display.clientWidth + 1 && display.scrollHeight <= display.clientHeight + 1;
+        };
+        let lo = 0.4, hi = 2.6, best = lo;
+        for (let i = 0; i < 14; i++) {
+            const mid = (lo + hi) / 2;
+            if (probe(mid)) { best = mid; lo = mid; } else { hi = mid; }
+        }
+        // Même la plus petite échelle ne suffit pas (chanson très longue) : on la garde et on autorise le défilement
+        // horizontal plutôt que de couper du contenu.
+        if (!probe(best)) set({ overflowX: 'auto' });
+        return best;
+    }
+
+    function chordsSignature(panel, display) {
+        return display.textContent.length + ':' + display.childElementCount + ':' + panel.clientWidth + 'x' + panel.clientHeight;
+    }
+
+    // apply pour fitChords, écrite dans une feuille de style (les valeurs recopiées du maître sont ainsi surchargées)
+    function makeChordsApplier(styleEl, sel) {
+        const st = { height: null, overflowX: 'hidden', scale: null, cardW: null };
+        return function (s) {
+            Object.assign(st, s);
+            styleEl.textContent = sel + '{' + (st.height != null ? 'height:' + st.height + 'px !important;' : '') +
+                'overflow-x:' + st.overflowX + ' !important;' +
+                (st.scale != null ? '--cfs-scale:' + st.scale.toFixed(3) + ' !important;--cfs-cardw:' + st.cardW.toFixed(1) + 'px !important;' : '') + '}';
+        };
+    }
+
+    window.LyricsFit = { css, signature, fit, makeApplier, label, fitChords, chordsSignature, makeChordsApplier,
+        SCALES, MIN_SCALE, MAX_COLS, COL_ADVANTAGE, CLASS_ON: 'lyrics-fit-on' };
 
     // Poste maître : la disposition est portée par une classe sur l'élément + une feuille de style (voir app.js). La
     // feuille est créée ici, avant sync.js, pour ne pas être envoyée aux écrans déportés comme style « dynamique ».

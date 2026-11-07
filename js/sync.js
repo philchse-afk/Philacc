@@ -143,6 +143,9 @@
                 // Ajustement à la page (1 ou 2 colonnes) : chaque écran le recalcule avec ses propres dimensions
                 // (voir viewerFit) ; la classe du maître n'est donc pas envoyée.
                 if (a.id === 'song-content-display') { b.classList.remove('lyrics-fit-on'); b.classList.remove('lyrics-fit-2col'); }
+                // Plein écran de la frame Accords : l'échelle et la taille des cartes sont aussi recalculées par chaque écran ;
+                // on n'envoie donc pas celles du maître (en pixels, calculées pour SON écran).
+                if (a.id === 'display-chords') ['height', 'overflow-x', '--cfs-scale', '--cfs-cardw'].forEach(p => b.style.removeProperty(p));
 
                 if (fsEl && a === fsEl) {          // plein écran natif : reproduit côté écrans déportés
                     const cls = FS_CLASS[a.id];
@@ -465,7 +468,8 @@
             badge.set('● Synchronisé · lecture ' + dbg.read + ' + MAJ ' + dbg.upd + ' ms · ' + dbg.kb + ' Ko · pire MAJ ' +
                 Math.max(dbg.maxApply, dbg.lastMaxApply) + ' ms · pire image ' + dbg.worstFrame + ' ms (' + dbg.slowFrames +
                 ' > 100 ms)' + (lite ? ' · mode léger' : '') +
-                (fitSig && typeof LyricsFit !== 'undefined' ? ' · texte : ' + LyricsFit.label(fitLay) : ''), 'corner');
+                (fitSig && typeof LyricsFit !== 'undefined' ? ' · texte : ' + LyricsFit.label(fitLay) : '') +
+                (cfsSig ? ' · accords : échelle ' + cfsScale.toFixed(2) : ''), 'corner');
         }
         // Mesure l'écart entre images affichées : une saccade perçue = un grand écart, quelle qu'en soit la cause.
         // Tourne seulement tant que des mises à jour arrivent (sauf en mode diagnostic) : pas de coût au repos.
@@ -526,7 +530,7 @@
         }
         function reapplyScrollSoon() {
             if (reapplyRaf || !scrollState) return;
-            reapplyRaf = requestAnimationFrame(() => { reapplyRaf = 0; viewerFit(false); applyScroll(); });
+            reapplyRaf = requestAnimationFrame(() => { reapplyRaf = 0; viewerFit(false); viewerFitChords(false); applyScroll(); });
         }
         window.addEventListener('load', reapplyScrollSoon);
         window.addEventListener('resize', reapplyScrollSoon);
@@ -556,6 +560,25 @@
             if (lay) fitLay = lay;
             elList = null;                                                     // la disposition a changé
         }
+        // ---- Plein écran de la frame Accords : même principe (LyricsFit.fitChords), avec les dimensions de CET écran ----
+        const cfsStyle = document.createElement('style');
+        cfsStyle.id = 'sync-cfs';
+        const CFS_SEL = '#song-chords-panel.cfs-active #display-chords.cfs-flow';
+        let cfsSig = '', cfsScale = 0;
+        function viewerFitChords(force) {
+            if (typeof LyricsFit === 'undefined' || !LyricsFit.fitChords) return;
+            const panel = document.getElementById('song-chords-panel'), d = document.getElementById('display-chords');
+            if (!panel || !d || !panel.classList.contains('cfs-active') || !d.classList.contains('cfs-flow')) {
+                if (cfsSig !== '') { cfsStyle.textContent = ''; cfsSig = ''; cfsScale = 0; }
+                return;
+            }
+            const sig = LyricsFit.chordsSignature(panel, d);
+            if (!force && sig === cfsSig) return;
+            cfsSig = sig;
+            if (!cfsStyle.parentNode) document.head.appendChild(cfsStyle);
+            cfsScale = LyricsFit.fitChords(panel, d, LyricsFit.makeChordsApplier(cfsStyle, CFS_SEL));
+        }
+
         // Écran trop petit pour tout afficher : le maître (plus grand) ne défile peut-être pas, donc rien à recopier.
         // On garde alors visible la ligne en cours (accord actif de la lecture), comme le fait le maître en défilement.
         function followLyrics(el) {
@@ -593,6 +616,7 @@
                 syncControls(doc.body);
                 elList = null;                      // le DOM a pu changer : la liste d'éléments mise en cache est périmée
                 viewerFit(false);                   // plein écran paroles : ajustement à la page de CET écran
+                viewerFitChords(false);             // plein écran frame Accords : idem
                 if (DEBUG) {
                     const read = Math.round(t1 - t0), upd = Math.round(performance.now() - t1);
                     dbg.read = read; dbg.upd = upd; dbg.kb = Math.round(m.body.length / 1024);
