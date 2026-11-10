@@ -558,6 +558,8 @@
             if (!fitStyle.parentNode) document.head.appendChild(fitStyle);
             const lay = LyricsFit.fit(el, LyricsFit.makeApplier(el, fitStyle, LYRICS_FS, null));
             if (lay) fitLay = lay;
+            // vignettes de post-its : replacées selon la mise en page de CET écran (leurs positions recopiées sont celles du maître)
+            if (LyricsFit.postitRules) fitStyle.textContent += LyricsFit.postitRules(el, LYRICS_FS, !!lay && !lay.scroll);
             elList = null;                                                     // la disposition a changé
         }
         // ---- Plein écran de la frame Accords : même principe (LyricsFit.fitChords), avec les dimensions de CET écran ----

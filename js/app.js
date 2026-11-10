@@ -1,4 +1,4 @@
-// app.js — v53
+// app.js — v54
 // FEAT : plein écran paroles — ajustement automatique à la page (voir _fitLyricsFullscreen et js/lyrics-fit.js) :
 //        on cherche la plus grande taille de texte (100 % → 60 %) qui tient SANS défilement en 1 colonne, puis en
 //        2 colonnes (maximum) ; 1 colonne est préférée sauf si 2 colonnes permettent un texte nettement plus grand.
@@ -9,6 +9,9 @@
 //        la hauteur dépend du nombre de lignes, pas de leur longueur (une chanson de 60 lignes courtes sur un écran large).
 // FEAT : plein écran frame Accords — le calcul d'échelle (_fitChordsFullscreen) est désormais partagé (LyricsFit.fitChords)
 //        pour que chaque écran déporté le refasse avec SES dimensions (il recopiait les pixels du maître : cartes coupées).
+// FIX  : chansons avec post-its — elles ne passaient jamais en plusieurs colonnes : les vignettes (position absolue, calculée
+//        pour l'ancienne mise en page) gonflaient la hauteur mesurée. Elles sont masquées pendant la mesure, puis replacées
+//        (_renderPostits) au bord droit de la colonne de leur ancre (LyricsFit.postitPos).
 // FEAT : texte affiché — cadre léger autour de chaque section (couplet vvvv, refrain rrrr, solo ssss, pont pppp),
 //        mêmes couleurs que les mesures du panneau d'accords (voir formatSongContent, option { sections: true }
 //        réservée à l'affichage : l'aperçu de l'éditeur garde une ligne = un élément, dont dépend le karaoké).
@@ -445,7 +448,7 @@ const App = {
         // Plein écran paroles : l'ajustement à la page dépend des dimensions de la zone (voir _fitLyricsFullscreen)
         const refitLyrics = () => {
             clearTimeout(this._lyricsFitTimer);
-            this._lyricsFitTimer = setTimeout(() => this._fitLyricsFullscreen(true), 100);
+            this._lyricsFitTimer = setTimeout(() => this._fitLyricsFullscreen(true, true), 100);
         };
         window.addEventListener('resize', refitLyrics);
         document.addEventListener('fullscreenchange', refitLyrics);
@@ -1598,7 +1601,16 @@ const App = {
             marker.className = 'postit-marker';
             marker.style.backgroundImage = `url("${src}")`;
             marker.title = anchor.dataset.postitId;
-            marker.style.top = `${anchor.offsetTop}px`;
+            // En plusieurs colonnes, la vignette se place au bord droit de la colonne de son ancre (voir js/lyrics-fit.js)
+            if (typeof LyricsFit !== 'undefined' && LyricsFit.postitPos) {
+                // texte ajusté à la page (sans défilement) : la vignette est gardée dans la zone visible
+                const fitted = this._isLyricsFullscreenActive() && !!this._lyricsFitLayout && !this._lyricsFitLayout.scroll;
+                const pos = LyricsFit.postitPos(container, anchor, 104, fitted);
+                marker.style.top = `${pos.top}px`;
+                if (pos.left !== null) { marker.style.left = `${pos.left}px`; marker.style.right = 'auto'; }
+            } else {
+                marker.style.top = `${anchor.offsetTop}px`;
+            }
 
             // ── Tooltip pleine taille au survol ──────────────────────────
             marker.addEventListener('mouseenter', (e) => {
@@ -7423,7 +7435,7 @@ const App = {
     },
 
     // force = true : recalcule même si le contenu et les dimensions n'ont pas changé.
-    _fitLyricsFullscreen(force) {
+    _fitLyricsFullscreen(force, replacePostits) {
         const el = document.getElementById('song-content-display');
         if (!el || typeof LyricsFit === 'undefined') return;
         if (!this._isLyricsFullscreenActive()) {          // hors plein écran : affichage normal (taille et colonnes d'origine)
@@ -7437,7 +7449,7 @@ const App = {
         const lay = LyricsFit.fit(el, LyricsFit.masterApplier(el));
         this._lyricsFitLayout = lay;                       // (consultable pour le diagnostic)
         const key = lay ? lay.cols + '/' + lay.scale + '/' + lay.scroll : '';
-        if (key !== this._lyricsFitKey) { this._lyricsFitKey = key; this._renderPostits(); }   // les ancres des post-its ont bougé
+        if (key !== this._lyricsFitKey || replacePostits) { this._lyricsFitKey = key; this._renderPostits(); }   // les ancres des post-its ont bougé
     },
     // ===== FIN AJUSTEMENT À LA PAGE =====
 

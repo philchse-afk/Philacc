@@ -78,7 +78,11 @@
     // particulière est active (sel doit alors la contenir).
     function makeApplier(el, styleEl, sel, cls) {
         return function (lay) {
-            const text = (lay.cols === 1 && lay.scale === 1) ? '' : css(sel, lay);
+            let text = (lay.cols === 1 && lay.scale === 1) ? '' : css(sel, lay);
+            // Pendant la MESURE, les vignettes de post-its sont masquées : ce sont des éléments positionnés en absolu, à une
+            // position calculée pour l'ancienne mise en page ; une vignette placée loin dans la chanson gonflerait la hauteur
+            // mesurée et ferait échouer tous les essais (les chansons avec post-its restaient alors toujours en 1 colonne).
+            if (lay.probe) text += sel + ' .postit-marker{display:none !important}';
             if (styleEl.textContent !== text) styleEl.textContent = text;
             if (cls) el.classList.toggle(cls, text !== '');
         };
@@ -87,7 +91,7 @@
     function fit(el, apply) {
         if (!el || !el.clientHeight || !el.clientWidth) return null;     // pas affiché : rien à mesurer
         const tryLayout = (cols, scale) => {
-            apply({ cols, scale });
+            apply({ cols, scale, probe: true });
             if (el.scrollHeight > el.clientHeight + 1) return false;      // déborde vers le bas
             // Deux colonnes de hauteur imposée : si le texte ne tient pas, le navigateur ajoute des colonnes
             // débordantes vers la DROITE (scrollWidth augmente) au lieu d'allonger la page vers le bas.
@@ -175,7 +179,42 @@
         };
     }
 
-    window.LyricsFit = { css, signature, fit, makeApplier, label, fitChords, chordsSignature, makeChordsApplier,
+    // ---------------------------------------------------------------------------------------------
+    // Post-its : position de la vignette d'une ancre. Une vignette est en position absolue ; en plusieurs colonnes elle se
+    // place au bord droit de la colonne qui contient son ancre (et non au bord droit de l'écran, loin de sa ligne).
+    // Utilisé par le maître (app.js : _renderPostits) et par les écrans déportés (postitRules).
+    // clamp = true quand le texte est ajusté à la page (pas de défilement) : une vignette (104 px de haut) dont l'ancre est
+    // tout en bas d'une colonne est remontée pour rester dans la zone visible, au lieu de déborder et de faire défiler la page.
+    function postitPos(container, anchor, markerW, clamp) {
+        let top = anchor.offsetTop;
+        if (clamp) top = Math.max(0, Math.min(top, container.clientHeight - 104 - 2));
+        const cs = getComputedStyle(container);
+        const n = parseInt(cs.columnCount, 10) || 1;                      // 'auto' (une seule colonne) -> 1
+        if (n < 2) return { top, left: null };
+        const pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
+        const gap = parseFloat(cs.columnGap) || 0;
+        const colW = (container.clientWidth - pl - pr - gap * (n - 1)) / n;
+        const idx = Math.max(0, Math.min(n - 1, Math.floor((anchor.offsetLeft - pl) / (colW + gap))));
+        return { top, left: Math.round(pl + idx * (colW + gap) + colW - markerW - 6) };
+    }
+
+    // Règles CSS qui placent les vignettes recopiées du maître (positions calculées pour SON écran) selon la mise en page
+    // de CET écran. Elles surchargent les valeurs en ligne (!important) sans toucher au DOM recopié.
+    function postitRules(container, sel, clamp) {
+        const anchors = {};
+        container.querySelectorAll('.postit-anchor').forEach(a => { anchors[a.dataset.postitId] = a; });
+        let out = '';
+        container.querySelectorAll('.postit-marker').forEach(m => {
+            const a = anchors[m.title];
+            if (!a) return;
+            const p = postitPos(container, a, m.offsetWidth || 104, clamp);
+            out += sel + ' .postit-marker[title="' + m.title.replace(/["\\]/g, '\\$&') + '"]{top:' + p.top + 'px !important;' +
+                (p.left !== null ? 'left:' + p.left + 'px !important;right:auto !important;' : 'left:auto !important;right:6px !important;') + '}';
+        });
+        return out;
+    }
+
+    window.LyricsFit = { css, signature, fit, makeApplier, label, fitChords, chordsSignature, makeChordsApplier, postitPos, postitRules,
         SCALES, MIN_SCALE, MAX_COLS, COL_ADVANTAGE, CLASS_ON: 'lyrics-fit-on' };
 
     // Poste maître : la disposition est portée par une classe sur l'élément + une feuille de style (voir app.js). La
